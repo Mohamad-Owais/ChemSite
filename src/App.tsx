@@ -8,6 +8,8 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import {
   Unit,
   Topic,
+  Subtopic,
+  SubtopicCompletion,
   StudySchedule,
   Resource,
   SyllabusDocument,
@@ -16,6 +18,9 @@ import {
 import {
   fetchUnits,
   fetchTopics,
+  fetchSubtopics,
+  fetchSubtopicCompletions,
+  toggleSubtopicCompletion,
   fetchSchedules,
   fetchResources,
   fetchActiveSyllabus,
@@ -34,25 +39,42 @@ const MainApp: React.FC = () => {
   // Core application data
   const [units, setUnits] = useState<Unit[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [subtopics, setSubtopics] = useState<Subtopic[]>([]);
   const [schedules, setSchedules] = useState<StudySchedule[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [syllabus, setSyllabus] = useState<SyllabusDocument | null>(null);
   const [completions, setCompletions] = useState<TopicCompletion[]>([]);
+  const [subtopicCompletions, setSubtopicCompletions] = useState<SubtopicCompletion[]>([]);
+
+  // Set of subtopic IDs completed by current student
+  const completedSubtopicIds = new Set(
+    subtopicCompletions
+      .filter((c) => (user ? c.user_id === user.id : true))
+      .map((c) => c.subtopic_id)
+  );
 
   // Set of topic IDs completed by current student
+  // A topic is completed if its entry is in topic_completions OR if all its subtopics are complete
   const completedTopicIds = new Set(
-    completions
-      .filter((c) => (user ? c.user_id === user.id : true))
-      .map((c) => c.topic_id)
+    topics
+      .filter((t) => {
+        const tSubs = subtopics.filter((st) => st.topic_id === t.id);
+        if (tSubs.length > 0) {
+          return tSubs.every((st) => completedSubtopicIds.has(st.id));
+        }
+        return completions.some((c) => (user ? c.user_id === user.id : true) && c.topic_id === t.id);
+      })
+      .map((t) => t.id)
   );
 
   const loadAllData = useCallback(async () => {
     if (!user) return;
     try {
       setDataLoading(true);
-      const [u, t, s, r, syl] = await Promise.all([
+      const [u, t, subs, s, r, syl] = await Promise.all([
         fetchUnits(),
         fetchTopics(),
+        fetchSubtopics(),
         fetchSchedules(),
         fetchResources(),
         fetchActiveSyllabus(),
@@ -60,11 +82,17 @@ const MainApp: React.FC = () => {
 
       setUnits(u);
       setTopics(t);
+      setSubtopics(subs);
       setSchedules(s);
       setResources(r);
       setSyllabus(syl);
 
-      // Load completions
+      // Load completions & subtopic completions
+      const [subComps] = await Promise.all([
+        fetchSubtopicCompletions(user.id),
+      ]);
+      setSubtopicCompletions(subComps);
+
       if (isAdmin) {
         const allComps = await fetchAllCompletions();
         setCompletions(allComps);
@@ -85,11 +113,49 @@ const MainApp: React.FC = () => {
     }
   }, [user, loadAllData]);
 
-  // Toggle completion handler
+  // Subtopic completion toggle handler
+  const handleToggleSubtopicComplete = async (subtopicId: string, isCurrentlyComplete: boolean) => {
+    if (!user) return;
+
+    // Optimistic update
+    if (isCurrentlyComplete) {
+      setSubtopicCompletions((prev) =>
+        prev.filter((c) => !(c.subtopic_id === subtopicId && c.user_id === user.id))
+      );
+    } else {
+      setSubtopicCompletions((prev) => [
+        ...prev,
+        {
+          id: 'temp_sub_' + Date.now(),
+          subtopic_id: subtopicId,
+          user_id: user.id,
+          completed_at: new Date().toISOString(),
+        },
+      ]);
+    }
+
+    try {
+      await toggleSubtopicCompletion(subtopicId, user.id, isCurrentlyComplete);
+    } catch (err) {
+      console.error('Failed to toggle subtopic completion:', err);
+      loadAllData();
+    }
+  };
+
+  // Topic completion toggle handler (e.g. from daily schedule checkboxes)
   const handleToggleComplete = async (topicId: string, isCurrentlyComplete: boolean) => {
     if (!user) return;
 
-    // Optimistic state update
+    // When toggling a topic from daily schedule: also mark all its subtopics
+    const topicSubtopics = subtopics.filter((st) => st.topic_id === topicId);
+    if (topicSubtopics.length > 0) {
+      const willBeComplete = !isCurrentlyComplete;
+      topicSubtopics.forEach((st) => {
+        handleToggleSubtopicComplete(st.id, !willBeComplete);
+      });
+    }
+
+    // Optimistic state update for topic_completions
     if (isCurrentlyComplete) {
       setCompletions((prev) => prev.filter((c) => !(c.topic_id === topicId && c.user_id === user.id)));
     } else {
@@ -108,7 +174,6 @@ const MainApp: React.FC = () => {
       await toggleTopicCompletion(topicId, user.id, isCurrentlyComplete);
     } catch (err) {
       console.error('Failed to toggle completion:', err);
-      // Re-sync on error
       loadAllData();
     }
   };
@@ -162,9 +227,10 @@ const MainApp: React.FC = () => {
               <TopicsBrowser
                 units={units}
                 topics={topics}
+                subtopics={subtopics}
                 syllabus={syllabus}
-                completedTopicIds={completedTopicIds}
-                onToggleComplete={handleToggleComplete}
+                completedSubtopicIds={completedSubtopicIds}
+                onToggleSubtopicComplete={handleToggleSubtopicComplete}
                 onSyllabusUpdated={loadAllData}
               />
             )}

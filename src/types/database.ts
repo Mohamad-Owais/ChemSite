@@ -38,6 +38,22 @@ export interface Topic {
   updated_at: string;
 }
 
+export interface Subtopic {
+  id: string;
+  topic_id: string;
+  title: string;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SubtopicCompletion {
+  id: string;
+  subtopic_id: string;
+  user_id: string;
+  completed_at: string;
+}
+
 export interface StudySchedule {
   id: string;
   topic_id: string;

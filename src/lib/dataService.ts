@@ -2,6 +2,8 @@ import { supabase, isSupabaseConfigured, uploadFileToStorage, deleteFileFromStor
 import {
   Unit,
   Topic,
+  Subtopic,
+  SubtopicCompletion,
   StudySchedule,
   TopicCompletion,
   Resource,
@@ -12,14 +14,28 @@ import {
 
 // Local storage mock keys for offline preview
 const STORAGE_KEYS = {
-  UNITS: 'chemsite_units',
-  TOPICS: 'chemsite_topics',
-  SCHEDULES: 'chemsite_schedules',
-  COMPLETIONS: 'chemsite_completions',
-  RESOURCES: 'chemsite_resources',
-  TOPIC_RESOURCES: 'chemsite_topic_resources',
-  SYLLABUS: 'chemsite_syllabus',
+  UNITS: 'chemsite_units_v2_official',
+  TOPICS: 'chemsite_topics_v2_official',
+  SUBTOPICS: 'chemsite_subtopics_v2_official',
+  SCHEDULES: 'chemsite_schedules_v2_official',
+  COMPLETIONS: 'chemsite_completions_v2_official',
+  SUBTOPIC_COMPLETIONS: 'chemsite_subtopic_completions_v2_official',
+  RESOURCES: 'chemsite_resources_v2_official',
+  TOPIC_RESOURCES: 'chemsite_topic_resources_v2_official',
+  SYLLABUS: 'chemsite_syllabus_v2_official',
 };
+
+export function resetToOfficialSyllabus(): void {
+  localStorage.removeItem(STORAGE_KEYS.UNITS);
+  localStorage.removeItem(STORAGE_KEYS.TOPICS);
+  localStorage.removeItem(STORAGE_KEYS.SUBTOPICS);
+  localStorage.removeItem(STORAGE_KEYS.SCHEDULES);
+  localStorage.removeItem(STORAGE_KEYS.COMPLETIONS);
+  localStorage.removeItem(STORAGE_KEYS.SUBTOPIC_COMPLETIONS);
+  localStorage.removeItem(STORAGE_KEYS.RESOURCES);
+  localStorage.removeItem(STORAGE_KEYS.TOPIC_RESOURCES);
+  localStorage.removeItem(STORAGE_KEYS.SYLLABUS);
+}
 
 // Default seed data for offline verification (clearly labeled as starter demonstration)
 const DEFAULT_UNITS: Unit[] = [
@@ -563,6 +579,162 @@ export async function deleteTopic(id: string): Promise<void> {
 
   const { error } = await supabase.from('topics').delete().eq('id', id);
   if (error) throw error;
+}
+
+// --------------------------------------------------------------------------
+// Subtopics API
+// --------------------------------------------------------------------------
+
+/**
+ * Extracts individual subtopics from topic description (split by semicolon)
+ * or creates a default subtopic if description has no delimiters.
+ */
+export function extractSubtopicsFromTopic(topic: Topic): Subtopic[] {
+  if (!topic.description || !topic.description.trim()) {
+    return [
+      {
+        id: `${topic.id}_sub_1`,
+        topic_id: topic.id,
+        title: topic.title,
+        order_index: 1,
+        created_at: topic.created_at,
+        updated_at: topic.updated_at,
+      },
+    ];
+  }
+
+  // Split by semicolon ';' or newline
+  const rawParts = topic.description
+    .split(/[;\n]+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  if (rawParts.length === 0) {
+    return [
+      {
+        id: `${topic.id}_sub_1`,
+        topic_id: topic.id,
+        title: topic.title,
+        order_index: 1,
+        created_at: topic.created_at,
+        updated_at: topic.updated_at,
+      },
+    ];
+  }
+
+  return rawParts.map((title, idx) => ({
+    id: `${topic.id}_sub_${idx + 1}`,
+    topic_id: topic.id,
+    title,
+    order_index: idx + 1,
+    created_at: topic.created_at,
+    updated_at: topic.updated_at,
+  }));
+}
+
+export async function fetchSubtopics(topicId?: string): Promise<Subtopic[]> {
+  if (!isSupabaseConfigured) {
+    // Generate subtopics dynamically from topics
+    const topics = await fetchTopics(undefined);
+    const targetTopics = topicId ? topics.filter((t) => t.id === topicId) : topics;
+    const generated: Subtopic[] = [];
+    for (const t of targetTopics) {
+      generated.push(...extractSubtopicsFromTopic(t));
+    }
+    return generated.sort((a, b) => a.order_index - b.order_index);
+  }
+
+  // Attempt to fetch from database table 'subtopics' if populated
+  try {
+    let query = supabase.from('subtopics').select('*').order('order_index', { ascending: true });
+    if (topicId) {
+      query = query.eq('topic_id', topicId);
+    }
+    const { data, error } = await query;
+    if (!error && data && data.length > 0) {
+      return data;
+    }
+  } catch (err) {
+    console.warn('Subtopics table query fallback to parsed topics:', err);
+  }
+
+  // Fallback: extract dynamically from topic descriptions
+  const topics = await fetchTopics(undefined);
+  const targetTopics = topicId ? topics.filter((t) => t.id === topicId) : topics;
+  const list: Subtopic[] = [];
+  for (const t of targetTopics) {
+    list.push(...extractSubtopicsFromTopic(t));
+  }
+  return list;
+}
+
+// --------------------------------------------------------------------------
+// Subtopic Completion API
+// --------------------------------------------------------------------------
+
+export async function fetchSubtopicCompletions(userId: string): Promise<SubtopicCompletion[]> {
+  if (!isSupabaseConfigured) {
+    const list = getLocal<SubtopicCompletion[]>(STORAGE_KEYS.SUBTOPIC_COMPLETIONS, []);
+    return list.filter((c) => c.user_id === userId);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('subtopic_completions')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (!error && data) {
+      return data;
+    }
+  } catch {
+    // Fallback if subtopic_completions table not yet created
+  }
+
+  // Fallback to localStorage for persistence
+  const list = getLocal<SubtopicCompletion[]>(STORAGE_KEYS.SUBTOPIC_COMPLETIONS, []);
+  return list.filter((c) => c.user_id === userId);
+}
+
+export async function toggleSubtopicCompletion(
+  subtopicId: string,
+  userId: string,
+  isCurrentlyComplete: boolean
+): Promise<boolean> {
+  // Always update localStorage
+  let list = getLocal<SubtopicCompletion[]>(STORAGE_KEYS.SUBTOPIC_COMPLETIONS, []);
+  if (isCurrentlyComplete) {
+    list = list.filter((c) => !(c.subtopic_id === subtopicId && c.user_id === userId));
+  } else {
+    list.push({
+      id: 'subcomp_' + Date.now(),
+      subtopic_id: subtopicId,
+      user_id: userId,
+      completed_at: new Date().toISOString(),
+    });
+  }
+  setLocal(STORAGE_KEYS.SUBTOPIC_COMPLETIONS, list);
+
+  // If Supabase is configured, also persist to Supabase
+  if (isSupabaseConfigured) {
+    try {
+      if (isCurrentlyComplete) {
+        await supabase
+          .from('subtopic_completions')
+          .delete()
+          .eq('subtopic_id', subtopicId)
+          .eq('user_id', userId);
+      } else {
+        await supabase
+          .from('subtopic_completions')
+          .insert([{ subtopic_id: subtopicId, user_id: userId }]);
+      }
+    } catch (err) {
+      console.warn('Supabase subtopic_completions update failed, persisted in local storage:', err);
+    }
+  }
+
+  return !isCurrentlyComplete;
 }
 
 // --------------------------------------------------------------------------

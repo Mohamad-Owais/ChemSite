@@ -21,7 +21,18 @@ export const Header: React.FC<HeaderProps> = ({ currentView, onNavigate }) => {
             </span>
           </div>
           {switchDemoRole && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.clear();
+                  window.location.reload();
+                }}
+                className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-700 hover:bg-emerald-800 text-white transition mr-2"
+                title="Reload with official syllabus"
+              >
+                ↻ Load Official Syllabus
+              </button>
               <span className="text-stone-500 font-medium">Switch view as:</span>
               <button
                 type="button"
