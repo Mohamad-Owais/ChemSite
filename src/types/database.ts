@@ -80,6 +80,15 @@ export interface Resource {
   storage_path: string | null;
   file_name: string | null;
   file_size: number | null;
+  // Extended metadata fields
+  author: string | null;
+  publication: string | null;
+  exam_year: number | null;
+  paper_number: string | null;
+  edition: string | null;
+  admin_notes: string | null;
+  /** ID of the associated answer key resource (for DPPs and test papers) */
+  linked_answer_key_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -114,6 +123,17 @@ export const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
   other: 'Other Resource',
 };
 
+export const RESOURCE_TYPE_SHORT_LABELS: Record<ResourceType, string> = {
+  lecture_video: 'Video',
+  book: 'Book',
+  notes: 'Notes',
+  dpp: 'DPP',
+  pyq: 'PYQ',
+  test: 'Test',
+  answer_key: 'Ans. Key',
+  other: 'Other',
+};
+
 export const RESOURCE_TYPE_COLORS: Record<ResourceType, { bg: string; text: string; border: string }> = {
   lecture_video: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
   book: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200' },
@@ -124,3 +144,12 @@ export const RESOURCE_TYPE_COLORS: Record<ResourceType, { bg: string; text: stri
   answer_key: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
   other: { bg: 'bg-stone-50', text: 'text-stone-700', border: 'border-stone-200' },
 };
+
+/** Resource types that can have an associated answer key */
+export const RESOURCE_TYPES_WITH_ANSWER_KEY: ResourceType[] = ['dpp', 'test', 'pyq'];
+
+/** Resource types that commonly have exam year metadata */
+export const RESOURCE_TYPES_WITH_YEAR: ResourceType[] = ['pyq', 'test', 'dpp', 'answer_key'];
+
+/** Resource types that commonly have an author/publication */
+export const RESOURCE_TYPES_WITH_AUTHOR: ResourceType[] = ['book', 'notes', 'other'];

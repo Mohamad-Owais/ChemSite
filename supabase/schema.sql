@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- 4. UNITS (Subject -> Unit)
 CREATE TABLE IF NOT EXISTS public.units (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    title TEXT NOT NULL,
+    title TEXT NOT NULL UNIQUE,
     description TEXT,
     order_index INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS public.topics (
     description TEXT,
     order_index INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_topics_unit_title UNIQUE (unit_id, title)
 );
 
 -- Index for ordering & parent queries

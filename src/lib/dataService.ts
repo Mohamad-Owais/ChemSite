@@ -338,6 +338,13 @@ const DEFAULT_RESOURCES: Resource[] = [
     storage_path: null,
     file_name: null,
     file_size: null,
+    author: null,
+    publication: null,
+    exam_year: null,
+    paper_number: null,
+    edition: null,
+    admin_notes: null,
+    linked_answer_key_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -349,6 +356,13 @@ const DEFAULT_RESOURCES: Resource[] = [
     storage_path: 'resources/sample_mo_theory.pdf',
     file_name: 'Miessler_Tarr_Chapter_5.pdf',
     file_size: 4200000,
+    author: 'Miessler & Tarr',
+    publication: 'Pearson',
+    exam_year: null,
+    paper_number: null,
+    edition: '5th',
+    admin_notes: null,
+    linked_answer_key_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
@@ -360,21 +374,54 @@ const DEFAULT_RESOURCES: Resource[] = [
     storage_path: 'resources/dpp_01_bonding.pdf',
     file_name: 'DPP_01_Bonding.pdf',
     file_size: 1540000,
+    author: null,
+    publication: null,
+    exam_year: null,
+    paper_number: '01',
+    edition: null,
+    admin_notes: null,
+    linked_answer_key_id: 'r5',
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
     id: 'r4',
-    title: 'IIT-JAM 2021-2024 Bonding PYQ Compilation with Solutions',
+    title: 'IIT-JAM 2023 Physical Chemistry PYQ with Solutions',
     resource_type: 'pyq',
     external_url: null,
     storage_path: 'resources/pyq_bonding_2024.pdf',
     file_name: 'Bonding_PYQ_Solved.pdf',
     file_size: 2890000,
+    author: null,
+    publication: null,
+    exam_year: 2023,
+    paper_number: null,
+    edition: null,
+    admin_notes: null,
+    linked_answer_key_id: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: 'r5',
+    title: 'Answer Key — DPP #01 Chemical Bonding',
+    resource_type: 'answer_key',
+    external_url: null,
+    storage_path: 'resources/dpp_01_bonding_key.pdf',
+    file_name: 'DPP_01_Bonding_Key.pdf',
+    file_size: 540000,
+    author: null,
+    publication: null,
+    exam_year: null,
+    paper_number: '01',
+    edition: null,
+    admin_notes: null,
+    linked_answer_key_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
 ];
+
 
 const DEFAULT_TOPIC_RESOURCES: TopicResource[] = [
   { topic_id: 't_i3', resource_id: 'r1', created_at: new Date().toISOString() },
@@ -405,9 +452,22 @@ function setLocal<T>(key: string, value: T): void {
 // Units & Topics API
 // --------------------------------------------------------------------------
 
+/** Deduplicate an array of units by title, keeping the first occurrence. */
+function deduplicateUnits(units: Unit[]): Unit[] {
+  const seen = new Set<string>();
+  return units.filter((u) => {
+    const key = u.title.toLowerCase().trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export async function fetchUnits(): Promise<Unit[]> {
   if (!isSupabaseConfigured) {
-    return getLocal<Unit[]>(STORAGE_KEYS.UNITS, DEFAULT_UNITS).sort((a, b) => a.order_index - b.order_index);
+    return deduplicateUnits(
+      getLocal<Unit[]>(STORAGE_KEYS.UNITS, DEFAULT_UNITS).sort((a, b) => a.order_index - b.order_index)
+    );
   }
 
   const { data, error } = await supabase
@@ -419,14 +479,26 @@ export async function fetchUnits(): Promise<Unit[]> {
     console.error('Failed to fetch units:', error);
     throw error;
   }
-  return data || [];
+  return deduplicateUnits(data || []);
+}
+
+/** Deduplicate an array of topics by (unit_id + title), keeping the first occurrence. */
+function deduplicateTopics(topics: Topic[]): Topic[] {
+  const seen = new Set<string>();
+  return topics.filter((t) => {
+    const key = `${t.unit_id}::${t.title.toLowerCase().trim()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function fetchTopics(unitId?: string): Promise<Topic[]> {
   if (!isSupabaseConfigured) {
-    const all = getLocal<Topic[]>(STORAGE_KEYS.TOPICS, DEFAULT_TOPICS);
-    const filtered = unitId ? all.filter((t) => t.unit_id === unitId) : all;
-    return filtered.sort((a, b) => a.order_index - b.order_index);
+    const all = deduplicateTopics(
+      getLocal<Topic[]>(STORAGE_KEYS.TOPICS, DEFAULT_TOPICS).sort((a, b) => a.order_index - b.order_index)
+    );
+    return unitId ? all.filter((t) => t.unit_id === unitId) : all;
   }
 
   let query = supabase.from('topics').select('*').order('order_index', { ascending: true });
@@ -439,7 +511,7 @@ export async function fetchTopics(unitId?: string): Promise<Topic[]> {
     console.error('Failed to fetch topics:', error);
     throw error;
   }
-  return data || [];
+  return deduplicateTopics(data || []);
 }
 
 export async function createUnit(title: string, description?: string): Promise<Unit> {
@@ -958,6 +1030,13 @@ export async function createResource(data: {
   storage_path?: string | null;
   file_name?: string | null;
   file_size?: number | null;
+  author?: string | null;
+  publication?: string | null;
+  exam_year?: number | null;
+  paper_number?: string | null;
+  edition?: string | null;
+  admin_notes?: string | null;
+  linked_answer_key_id?: string | null;
   topic_ids?: string[];
 }): Promise<Resource> {
   const { topic_ids, ...resourceData } = data;
@@ -972,6 +1051,13 @@ export async function createResource(data: {
       storage_path: resourceData.storage_path || null,
       file_name: resourceData.file_name || null,
       file_size: resourceData.file_size || null,
+      author: resourceData.author || null,
+      publication: resourceData.publication || null,
+      exam_year: resourceData.exam_year || null,
+      paper_number: resourceData.paper_number || null,
+      edition: resourceData.edition || null,
+      admin_notes: resourceData.admin_notes || null,
+      linked_answer_key_id: resourceData.linked_answer_key_id || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -1018,7 +1104,11 @@ export async function createResource(data: {
 
 export async function updateResource(
   id: string,
-  data: Partial<Pick<Resource, 'title' | 'resource_type' | 'external_url' | 'storage_path' | 'file_name' | 'file_size'>>,
+  data: Partial<Pick<Resource,
+    | 'title' | 'resource_type' | 'external_url' | 'storage_path' | 'file_name' | 'file_size'
+    | 'author' | 'publication' | 'exam_year' | 'paper_number' | 'edition'
+    | 'admin_notes' | 'linked_answer_key_id'
+  >>,
   topic_ids?: string[]
 ): Promise<Resource> {
   if (!isSupabaseConfigured) {
